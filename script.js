@@ -369,3 +369,412 @@ const questionsDB = [
     { module: 7, question: "On considère la fonction Python suivante : def rechercheMaximum(L): max = L[0]; for i in range(len(L)): if L[i] > max: max = L[i]; return max. On note n la taille de la liste. Quelle est la complexité en nombre d’opérations ?", choices: ["constante", "linéaire", "quadratique", "cubique"], answer: "linéaire" },
     { module: 7, question: "On définit une fonction de recherche dichotomique : def recherchee(x, liste_triee): a = 0; b = len(liste_triee)-1; while a < b: m = (a + b)//2; if liste_triee[m] == x: return m; elif liste_triee[m] > x: b = m - 1; else: ........; return a. Par quoi faut-il remplacer la ligne pointillée ?", choices: ["a = m + 1", "a = m - 1", "a = b", "a = b - m"], answer: "a = m + 1" }
 ];
+// ==========================================
+// VARIABLES ET ÉTAT DE L'APPLICATION
+// ==========================================
+let studentInfo = {};
+let selectedQuestions = [];
+let userAnswers = [];
+let currentQuestionIndex = 0;
+let timeLeft = 120 * 60; // 120 minutes en secondes
+let timerInterval;
+let cheatCount = 0;
+
+// ==========================================
+// FONCTIONS UTILITAIRES
+// ==========================================
+
+// Mélanger un tableau (algorithme de Fisher-Yates)
+function shuffleArray(array) {
+    let arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
+
+// Formater le temps en HH:MM:SS
+function formatTime(seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+// Sauvegarder l'état dans le localStorage
+function saveState() {
+    const state = {
+        studentInfo,
+        selectedQuestions,
+        userAnswers,
+        currentQuestionIndex,
+        timeLeft
+    };
+    localStorage.setItem('nsi_qcm_state', JSON.stringify(state));
+}
+
+// Charger l'état depuis le localStorage
+function loadState() {
+    const saved = localStorage.getItem('nsi_qcm_state');
+    if (saved) {
+        return JSON.parse(saved);
+    }
+    return null;
+}
+
+// Basculer entre les vues
+function showView(viewId) {
+    document.querySelectorAll('.container').forEach(div => div.classList.remove('active'));
+    document.getElementById(viewId).classList.add('active');
+}
+
+// ==========================================
+// LOGIQUE PRINCIPALE
+// ==========================================
+
+// Initialisation de l'application
+function init() {
+    const savedState = loadState();
+    if (savedState) {
+        if (confirm("Une session précédente a été détectée. Voulez-vous la reprendre ?")) {
+            restoreSession(savedState);
+            return;
+        } else {
+            localStorage.removeItem('nsi_qcm_state');
+        }
+    }
+    showView('home');
+    setupAntiCheat();
+}
+
+// Restaurer une session existante
+function restoreSession(state) {
+    studentInfo = state.studentInfo;
+    selectedQuestions = state.selectedQuestions;
+    userAnswers = state.userAnswers;
+    currentQuestionIndex = state.currentQuestionIndex;
+    timeLeft = state.timeLeft;
+    
+    document.getElementById('student-banner').innerText = `${studentInfo.prenom} ${studentInfo.nom} - ${studentInfo.classe}`;
+    showView('quiz');
+    startTimer();
+    renderQuestion();
+}
+
+// Démarrer le QCM
+function startQuiz(event) {
+    event.preventDefault();
+    
+    studentInfo = {
+        nom: document.getElementById('nom').value,
+        prenom: document.getElementById('prenom').value,
+        classe: document.getElementById('classe').value,
+        email: document.getElementById('email').value
+    };
+
+    // Sélectionner 6 questions aléatoires par module
+    selectedQuestions = [];
+    for (let i = 1; i <= 7; i++) {
+        const moduleQuestions = questionsDB.filter(q => q.module === i);
+        const shuffled = shuffleArray(moduleQuestions);
+        selectedQuestions.push(...shuffled.slice(0, 6));
+    }
+
+    // Initialiser les réponses utilisateur
+    userAnswers = new Array(selectedQuestions.length).fill(null);
+
+    // Mélanger les choix de chaque question
+    selectedQuestions.forEach(q => {
+        q.choices = shuffleArray(q.choices);
+    });
+
+    currentQuestionIndex = 0;
+    document.getElementById('student-banner').innerText = `${studentInfo.prenom} ${studentInfo.nom} - ${studentInfo.classe}`;
+    
+    showView('quiz');
+    startTimer();
+    renderQuestion();
+}
+
+// Minuterie
+function startTimer() {
+    updateTimerDisplay();
+    timerInterval = setInterval(() => {
+        timeLeft--;
+        updateTimerDisplay();
+        saveState();
+
+        if (timeLeft <= 0) {
+            clearInterval(timerInterval);
+            alert("Le temps est écoulé ! Votre copie est soumise automatiquement.");
+            submitQuiz();
+        }
+    }, 1000);
+}
+
+function updateTimerDisplay() {
+    const timerEl = document.getElementById('timer');
+    timerEl.innerText = formatTime(timeLeft);
+    
+    // Alerte visuelle à 10 minutes (600 secondes)
+    if (timeLeft <= 600) {
+        timerEl.classList.add('warning');
+    } else {
+        timerEl.classList.remove('warning');
+    }
+}
+
+// Afficher la question en cours
+function renderQuestion() {
+    const q = selectedQuestions[currentQuestionIndex];
+    const moduleNames = {
+        1: "Module 1 : Représentation des données : types et valeurs de base",
+        2: "Module 2 : Représentation des données : types construits",
+        3: "Module 3 : Traitement des données en tables",
+        4: "Module 4 : Interactions homme-machine sur le Web",
+        5: "Module 5 : Architectures matérielles et systèmes d'exploitation",
+        6: "Module 6 : Langages et programmation",
+        7: "Module 7 : Algorithmique"
+    };
+
+    document.getElementById('module-title').innerText = moduleNames[q.module];
+    document.getElementById('question-text').innerText = q.question;
+
+    const choicesContainer = document.getElementById('choices-container');
+    choicesContainer.innerHTML = '';
+
+    const letters = ['A', 'B', 'C', 'D'];
+    q.choices.forEach((choice, index) => {
+        const label = document.createElement('label');
+        label.className = 'choice-label';
+        label.innerHTML = `
+            <input type="radio" name="q${currentQuestionIndex}" value="${choice}" ${userAnswers[currentQuestionIndex] === choice ? 'checked' : ''}>
+            <span>${letters[index]}. ${choice}</span>
+        `;
+        
+        // Sauvegarde au clic
+        label.addEventListener('click', () => {
+            userAnswers[currentQuestionIndex] = choice;
+            choicesContainer.querySelectorAll('.choice-label').forEach(l => l.classList.remove('selected'));
+            label.classList.add('selected');
+            saveState();
+        });
+        
+        if (userAnswers[currentQuestionIndex] === choice) {
+            label.classList.add('selected');
+        }
+        
+        choicesContainer.appendChild(label);
+    });
+
+    updateNavigation();
+    updateProgressBar();
+}
+
+// Mise à jour de la barre de progression
+function updateProgressBar() {
+    const progress = ((currentQuestionIndex + 1) / selectedQuestions.length) * 100;
+    document.getElementById('progress-bar').style.width = `${progress}%`;
+    document.getElementById('progress-text').innerText = `Question ${currentQuestionIndex + 1} / ${selectedQuestions.length} (${Math.round(progress)}%)`;
+}
+
+// Mise à jour des boutons de navigation
+function updateNavigation() {
+    document.getElementById('btn-prev').disabled = currentQuestionIndex === 0;
+    
+    if (currentQuestionIndex === selectedQuestions.length - 1) {
+        document.getElementById('btn-next').style.display = 'none';
+        document.getElementById('btn-submit').style.display = 'block';
+    } else {
+        document.getElementById('btn-next').style.display = 'block';
+        document.getElementById('btn-submit').style.display = 'none';
+    }
+}
+
+// Navigation
+document.getElementById('btn-next').addEventListener('click', () => {
+    if (!userAnswers[currentQuestionIndex]) {
+        alert("Veuillez sélectionner une réponse avant de continuer.");
+        return;
+    }
+    currentQuestionIndex++;
+    renderQuestion();
+});
+
+document.getElementById('btn-prev').addEventListener('click', () => {
+    currentQuestionIndex--;
+    renderQuestion();
+});
+
+// Soumission du QCM
+document.getElementById('btn-submit').addEventListener('click', submitQuiz);
+
+function submitQuiz() {
+    // Vérifier si toutes les questions sont remplies
+    const unanswered = userAnswers.filter(a => a === null).length;
+    if (unanswered > 0) {
+        if (!confirm(`Il reste ${unanswered} question(s) sans réponse. Voulez-vous vraiment soumettre ?`)) {
+            return;
+        }
+    }
+
+    clearInterval(timerInterval);
+    calculateResults();
+    showView('results');
+    localStorage.removeItem('nsi_qcm_state'); // Nettoyer le stockage
+}
+
+// Calcul des résultats
+function calculateResults() {
+    let score = 0;
+    selectedQuestions.forEach((q, i) => {
+        if (userAnswers[i] === q.answer) {
+            score++;
+        }
+    });
+
+    const note = ((score / 42) * 20).toFixed(1);
+    const percent = Math.round((score / 42) * 100);
+
+    document.getElementById('student-results-info').innerHTML = `<p>${studentInfo.prenom} ${studentInfo.nom} - ${studentInfo.classe}</p>`;
+    document.getElementById('score-note').innerText = note;
+    document.getElementById('score-raw').innerText = `${score} / 42`;
+    document.getElementById('score-percent').innerText = `${percent}`;
+}
+
+// Afficher la correction détaillée
+document.getElementById('btn-correction').addEventListener('click', () => {
+    renderCorrection();
+    showView('correction');
+});
+
+function renderCorrection() {
+    const container = document.getElementById('correction-list');
+    container.innerHTML = '';
+    const letters = ['A', 'B', 'C', 'D'];
+
+    selectedQuestions.forEach((q, index) => {
+        const userAns = userAnswers[index];
+        const isCorrect = userAns === q.answer;
+        
+        const div = document.createElement('div');
+        div.className = `correction-item ${isCorrect ? 'correct' : 'incorrect'}`;
+        
+        div.innerHTML = `
+            <div class="correction-header">
+                Question ${index + 1} <span>${isCorrect ? '✅ Correct' : '❌ Faux'}</span>
+            </div>
+            <p><strong>Énoncé :</strong> ${q.question}</p>
+            <div class="answer-comparison">
+                <p style="color: ${isCorrect ? 'var(--success)' : 'var(--error)'}">Votre réponse : ${userAns || "Aucune réponse"}</p>
+                ${!isCorrect ? `<p style="color: var(--success)">Bonne réponse : ${q.answer}</p>` : ''}
+            </div>
+        `;
+        container.appendChild(div);
+    });
+}
+
+// Retour aux résultats depuis la correction
+document.getElementById('btn-back-results').addEventListener('click', () => {
+    showView('results');
+});
+
+// ==========================================
+// EXPORT PDF
+// ==========================================
+function generatePDF() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    // En-tête
+    doc.setFontSize(18);
+    doc.setTextColor(33, 150, 243);
+    doc.text("Résultats Évaluation QCM - NSI", 105, 20, { align: 'center' });
+
+    // Informations élève
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Nom : ${studentInfo.nom}`, 20, 40);
+    doc.text(`Prénom : ${studentInfo.prenom}`, 20, 48);
+    doc.text(`Classe : ${studentInfo.classe}`, 20, 56);
+
+    // Scores
+    let score = 0;
+    selectedQuestions.forEach((q, i) => { if (userAnswers[i] === q.answer) score++; });
+    const note = ((score / 42) * 20).toFixed(1);
+
+    doc.setFontSize(14);
+    doc.setTextColor(22, 163, 74);
+    doc.text(`Note : ${note} / 20`, 20, 70);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Score brut : ${score} / 42`, 20, 78);
+
+    // Correction détaillée
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    let y = 95;
+
+    selectedQuestions.forEach((q, index) => {
+        if (y > 270) { // Nouvelle page si on atteint le bas
+            doc.addPage();
+            y = 20;
+        }
+
+        const userAns = userAnswers[index];
+        const isCorrect = userAns === q.answer;
+
+        doc.setFont(undefined, 'bold');
+        doc.text(`Question ${index + 1} - ${isCorrect ? 'Correct' : 'Faux'}`, 20, y);
+        doc.setFont(undefined, 'normal');
+        y += 7;
+
+        // Gestion des retours à la ligne pour l'énoncé
+        const splitTitle = doc.splitTextToSize(q.question, 170);
+        doc.text(splitTitle, 20, y);
+        y += (splitTitle.length * 7);
+
+        doc.setTextColor(isCorrect ? 22 : 220, isCorrect ? 163 : 38, isCorrect ? 74 : 38);
+        doc.text(`Votre réponse : ${userAns || "Aucune"}`, 20, y);
+        y += 6;
+        
+        if (!isCorrect) {
+            doc.text(`Bonne réponse : ${q.answer}`, 20, y);
+            y += 6;
+        }
+        
+        doc.setTextColor(0, 0, 0);
+        y += 5;
+    });
+
+    doc.save(`Evaluation_NSI_${studentInfo.nom}_${studentInfo.prenom}.pdf`);
+}
+
+document.getElementById('btn-pdf').addEventListener('click', generatePDF);
+document.getElementById('btn-pdf-correction').addEventListener('click', generatePDF);
+
+// ==========================================
+// ANTI-TRICHE
+// ==========================================
+function setupAntiCheat() {
+    // Désactiver le clic droit
+    document.addEventListener('contextmenu', e => e.preventDefault());
+
+    // Détecter le changement d'onglet
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden' && document.getElementById('quiz').classList.contains('active')) {
+            cheatCount++;
+            document.getElementById('cheat-modal').style.display = 'block';
+        }
+    });
+}
+
+document.getElementById('btn-close-modal').addEventListener('click', () => {
+    document.getElementById('cheat-modal').style.display = 'none';
+});
+
+// Écouteur du formulaire
+document.getElementById('student-form').addEventListener('submit', startQuiz);
+
+// Lancer l'application
+window.onload = init;
