@@ -1,7 +1,7 @@
 // ==========================================
 // BASE DE DONNÉES EXHAUSTIVE NSI (7 PDFs)
 // ==========================================
-const questionsDB = [
+const questionsDB = [ 
     // MODULE 1 : Représentation des données : types et valeurs de base (Binaire, Hexa, Complément à 2, Flottants, Texte)
     { module: 1, question: "Parmi les propositions suivantes, laquelle est la représentation binaire de 761 ?", choices: ["11 1100 1101", "11 1110 0101", "10 0111 1001", "10 1111 0001"], answer: "10 1111 0001" },
     { module: 1, question: "En hexadécimal (base 16), quelle est la valeur de la différence CBD - BAC ?", choices: ["AB", "TB", "FF", "111"], answer: "111" },
